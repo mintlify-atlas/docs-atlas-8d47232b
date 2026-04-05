@@ -1,0 +1,36 @@
+---
+title: "Authentication"
+description: "The Thirukkural AI API requires no client-side authentication. Google Cloud credentials are configured server-side."
+---
+
+<Note>
+  The API currently requires no authentication from callers. CORS is open (`allow_origins=["*"]`) and there is no auth middleware in the server. You can call all endpoints without an API key or token.
+</Note>
+
+## Client requests
+
+No `Authorization` header, API key, or session token is needed. A basic request looks like this:
+
+```bash
+curl --request POST \
+  --url http://localhost:8000/api/v1/ask \
+  --header "Content-Type: application/json" \
+  --data '{"question": "How should I handle failure?"}'
+```
+
+## Server-side credentials
+
+Although the API is open to callers, the backend itself requires Google Cloud credentials to invoke the Vertex AI (Gemini) model. These are configured through environment variables on the server — not passed by the client.
+
+| Variable | Required | Description |
+| --- | --- | --- |
+| `VERTEX_ENDPOINT` | Yes | Full Vertex AI endpoint path in the form `projects/{project}/locations/{location}/endpoints/{endpoint}`. The server parses this to derive `project_id` and `location`. |
+| `GENAI_API_KEY` | Optional | Google GenAI API key for non-Vertex usage. |
+
+If `VERTEX_ENDPOINT` is not set, the server raises a `ValueError` on startup and all `/api/v1/ask` requests will return `500`.
+
+## Production deployments
+
+<Warning>
+  The open CORS policy and lack of authentication are appropriate for local development. In production, add authentication middleware (for example, API key validation or OAuth 2.0 bearer tokens) and restrict `allow_origins` to known domains before exposing the API publicly.
+</Warning>

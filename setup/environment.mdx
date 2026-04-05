@@ -1,0 +1,89 @@
+---
+title: "Environment variables"
+description: "Reference for all environment variables used by the Thirukkural.AI backend and frontend."
+---
+
+<Warning>
+  Never commit `.env` files to version control. The repository's `.gitignore` already excludes `.env`, `backend/.env`, `*.env`, and `.env.*`. If you accidentally commit credentials, rotate them immediately.
+</Warning>
+
+## Backend variables
+
+These variables are loaded by `python-dotenv` from a `.env` file in the `backend/` directory.
+
+### `VERTEX_ENDPOINT`
+
+**Required.** The full Vertex AI endpoint path for the fine-tuned model.
+
+```
+VERTEX_ENDPOINT=projects/{project_id}/locations/{location}/endpoints/{endpoint_id}
+```
+
+<Note>
+  `VERTEX_ENDPOINT` must be the complete slash-delimited path. The backend splits on `/` to extract the individual components:
+
+  ```python api_req.py
+  parts = vertex_endpoint.split('/')
+  project_id = parts[1]
+  location   = parts[3]
+  endpoint_id = parts[5]
+  ```
+
+  A value like `us-central1` alone (without the full path) will cause an `IndexError` at startup.
+</Note>
+
+### `GENAI_API_KEY`
+
+**Required.** Your Google Generative AI API key. Used to authenticate the `google-genai` client.
+
+### `PIPELINE_PORT`
+
+**Optional.** Port for the internal pipeline service. Not required for basic local development.
+
+### `REACT_APP_ORCHESTRATOR_PORT`
+
+**Optional.** Port for the orchestrator service. Not required for basic local development.
+
+---
+
+## Frontend variables
+
+These variables are loaded by Next.js from `.env.local` in the `frontend_new/` directory.
+
+### `NEXT_PUBLIC_AGENT_API`
+
+**Optional.** Base URL of the FastAPI backend. Defaults to `http://localhost:8000` when unset.
+
+```typescript agentClient.ts
+const DEFAULT_API_BASE = "http://localhost:8000";
+
+const normalizeBaseUrl = (url: string | undefined): string => {
+  if (!url) return DEFAULT_API_BASE;
+  return url.endsWith("/") ? url.slice(0, -1) : url;
+};
+
+const baseUrl = normalizeBaseUrl(process.env.NEXT_PUBLIC_AGENT_API);
+```
+
+The client automatically strips a trailing slash if present. In production, set this to the public URL of your deployed backend.
+
+<Note>
+  The `NEXT_PUBLIC_` prefix is required by Next.js to expose the variable to the browser bundle. Variables without this prefix are server-side only and will appear as `undefined` in client components.
+</Note>
+
+---
+
+## Example configuration files
+
+### `backend/.env`
+
+```bash backend/.env
+VERTEX_ENDPOINT=projects/my-project/locations/us-central1/endpoints/12345
+GENAI_API_KEY=your-api-key-here
+```
+
+### `frontend_new/.env.local`
+
+```bash frontend_new/.env.local
+NEXT_PUBLIC_AGENT_API=http://localhost:8000
+```

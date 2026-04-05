@@ -1,0 +1,90 @@
+{
+  "projectType": "saas",
+  "projectName": "Thirukkural.AI",
+  "projectDescription": "An AI-powered platform that provides personalized wisdom from the ancient Tamil text Thirukkural, matching users to relevant verses based on their emotions, personality type, and life situations.",
+  "theme": "almond",
+  "primaryColor": "#d97706",
+  "lightColor": "#fef3c7",
+  "darkColor": "#92400e",
+  "navigation": {
+    "tabs": [
+      {
+        "tab": "Documentation",
+        "groups": [
+          {
+            "group": "Get Started",
+            "pages": [
+              "introduction",
+              "quickstart",
+              "architecture"
+            ]
+          },
+          {
+            "group": "Core Features",
+            "pages": [
+              "features/personality-quiz",
+              "features/emotion-search",
+              "features/kural-discovery",
+              "features/language-support"
+            ]
+          },
+          {
+            "group": "Setup & Deployment",
+            "pages": [
+              "setup/frontend",
+              "setup/backend",
+              "setup/environment",
+              "setup/dataset"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "API Reference",
+        "groups": [
+          {
+            "group": "API Overview",
+            "pages": [
+              "api/overview",
+              "api/authentication"
+            ]
+          },
+          {
+            "group": "Endpoints",
+            "pages": [
+              "api/ask",
+              "api/health"
+            ]
+          },
+          {
+            "group": "Data Models",
+            "pages": [
+              "api/models/request",
+              "api/models/response",
+              "api/models/kural"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "keyFeatures": [
+    "Personality quiz with 15 questions to classify users into 5 personality types (Wise Seeker, Compassionate Heart, Strong Leader, Peaceful Soul, Ambitious Achiever)",
+    "Emotion-based Kural search with synonym expansion and semantic scoring via UniqueRagKuralFetcher",
+    "AI-powered agent backed by Google Vertex AI (Gemini) that generates personalized guidance grounded in Thirukkural verses",
+    "Bilingual support for Tamil and English Kural display with traditional 4-3 word line formatting",
+    "Dark/light theme toggle and responsive design built with Next.js 16, Tailwind CSS, and Framer Motion",
+    "FastAPI backend with CORS support exposing the Thirukkural agent over HTTP",
+    "Custom RAG retriever scoring Kurals by emotion, theme, virtue, and modern scenario relevance",
+    "Surprise Me feature that returns a personality-matched random Kural"
+  ],
+  "publicApiSurface": [
+    "POST /api/v1/ask — Submit a question and optional personality profile to get AI-generated Kural guidance",
+    "GET /health — Health check endpoint returning service status",
+    "fetchAgentResponse(question, personality?, signal?) — Frontend TypeScript client for the agent API",
+    "analyzePersonality(answers) — Derives a Personality object from quiz answers",
+    "getRandomKuralByPersonality(personalityType) — Returns a random Kural matched to a personality type",
+    "UniqueRagKuralFetcher.search(query, top_k?) — Scores and retrieves top-k Kurals for a free-form query",
+    "UniqueRagKuralFetcher.to_context_block(results) — Formats retrieved Kurals into a plain-text context string for the LLM"
+  ]
+}

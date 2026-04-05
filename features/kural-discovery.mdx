@@ -1,0 +1,138 @@
+---
+title: "Kural discovery"
+description: "How retrieved Kurals are turned into a structured AI response — from retrieval and context formatting through Vertex AI and Gemini to the final cards, actions, and analysis panel."
+---
+
+When you submit a query, Thirukkural.AI runs a multi-step pipeline that ends with a rich, structured response containing Kural cards, actionable guidance, and an optional analysis panel.
+
+## End-to-end flow
+
+<Steps>
+  <Step title="Query reaches the backend">
+    Your search text and personality object are sent to the backend via `fetchAgentResponse` (`frontend_new/src/utils/agentClient.ts`). The backend receives the raw emotion query.
+  </Step>
+  <Step title="Retrieval">
+    `UniqueRagKuralFetcher.search()` scores every Kural in the dataset and returns the top five most relevant records. See [Emotion search](/features/emotion-search) for the full scoring logic.
+  </Step>
+  <Step title="Context formatting">
+    The retrieved records are converted to a plain-text context block via `to_context_block()` and injected into the Gemini prompt alongside the user's query and personality.
+  </Step>
+  <Step title="Gemini response">
+    Vertex AI calls Gemini with the formatted context. Gemini returns a structured JSON object containing a summary, Kural cards, actionable guidance, and a planning object.
+  </Step>
+  <Step title="Frontend rendering">
+    The frontend reads `payload.response` and `payload.plan` and renders the summary heading, Kural cards, actions grid, and the collapsible analysis panel.
+  </Step>
+</Steps>
+
+## Expected response shape
+
+The agent returns a JSON payload with the following top-level keys:
+
+```json
+{
+  "question": "I feel depressed",
+  "plan": {
+    "situation_summary": "The user is experiencing persistent sadness and hopelessness.",
+    "emotional_tone": "grief",
+    "likely_needs": ["comfort", "perspective", "actionable steps"],
+    "action_outline": [
+      "Acknowledge the feeling without judgment",
+      "Reflect on what can be changed vs accepted",
+      "Seek connection with others"
+    ]
+  },
+  "retrieved_kurals": [
+    { "kural_id": 625, "score": 6.4821 },
+    { "kural_id": 1197, "score": 5.1034 }
+  ],
+  "response": {
+    "summary": "Ancient wisdom to guide you through sorrow",
+    "kurals": [
+      {
+        "kural_id": 625,
+        "virtue": "Fate",
+        "theme": "Grief",
+        "tamil": "அழுதல் அரும்பொருள் தேடி அடைந்திடும் …",
+        "english": "Weeping over loss brings no relief …"
+      }
+    ],
+    "actions": {
+      "immediate_step": "Sit with the feeling rather than suppressing it.",
+      "reflection_prompt": "What specific loss or fear underlies this sadness?",
+      "long_term_practice": "Cultivate equanimity through daily reflection."
+    }
+  },
+  "raw_response": "…"
+}
+```
+
+<Note>
+  The `raw_response` field contains the unprocessed Gemini output and is only used in the Analysis Details panel for debugging. It is not displayed to users by default.
+</Note>
+
+## What users see
+
+### Summary heading
+
+`agentResponse.summary` is rendered as a large centred heading at the top of the response card. Below it, the original query is displayed in italics for reference.
+
+### Kural cards
+
+Each entry in `agentResponse.kurals[]` renders as an individual card. The card layout is:
+
+<CardGroup cols={2}>
+  <Card title="Card header" icon="book-open">
+    **Kural {kural_id}** on the left.
+
+    **{virtue} · {theme}** on the right, uppercase with letter-spacing.
+  </Card>
+  <Card title="Card body" icon="font">
+    Tamil text formatted with `formatTamilKural()` — first four words on line one, remaining three on line two.
+
+    English translation shown below in italics.
+  </Card>
+</CardGroup>
+
+### Actions section
+
+`agentResponse.actions` is an object of key/value pairs. Each entry is rendered as a two-column grid item:
+
+- The **key** is displayed in small caps above the value (underscores replaced with spaces).
+- The **value** is the actionable guidance text.
+
+### Analysis details (collapsible)
+
+Clicking **View Analysis Details** expands a three-column panel sourced from `agentMeta`:
+
+| Panel | Source field | Contents |
+|-------|-------------|----------|
+| Planner Insight | `plan.situation_summary`, `plan.emotional_tone` | Summary of what the AI inferred about the user's situation |
+| Retrieval Stats | `retrievedKurals[]` | Count of retrieved Kurals; Kural IDs and scores for the top three |
+| Blueprint | `plan.action_outline[]` | Up to three action steps from the planner |
+
+```tsx
+// LandingPage.tsx — analysis panel data extraction
+const planDetails      = agentMeta?.plan ?? {};
+const likelyNeeds      = Array.isArray(planDetails.likely_needs)    ? planDetails.likely_needs    : [];
+const actionOutline    = Array.isArray(planDetails.action_outline)  ? planDetails.action_outline  : [];
+const retrievedCount   = agentMeta?.retrievedKurals?.length ?? 0;
+```
+
+## Context block format sent to Gemini
+
+Before the retrieved Kurals reach Gemini, `UniqueRagKuralFetcher.to_context_block()` serialises them into a structured text block:
+
+```
+Kural #625 | Theme: Grief | Virtue: Fate
+Tamil: அழுதல் அரும்பொருள் தேடி …
+English Translation: Weeping over loss brings no relief …
+Emotion: grief | Modern Scenario: Coping with personal loss or failure
+Guidance QA: Q: How should one face deep sorrow? | A: Accept it, learn from it, and move forward.
+
+Kural #1197 | Theme: Sorrow | Virtue: Endurance
+Tamil: …
+…
+```
+
+One block per Kural, separated by a blank line. This structured format ensures Gemini can reference specific verse IDs and their metadata when constructing its response.

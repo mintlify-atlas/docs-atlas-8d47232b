@@ -1,0 +1,85 @@
+---
+title: "Kural data model"
+description: "Fields of a Kural record as returned by the retriever in the retrieved_kurals array."
+---
+
+A Kural record represents a single verse from the Thirukkural — a classical Tamil text of 1,330 couplets attributed to the poet Thiruvalluvar. The dataset at `dataset/raw/kural_data_raw.json` stores one record per verse, each enriched with thematic metadata and modern guidance derived for AI retrieval.
+
+## Tamil verse format
+
+Each Kural is a couplet of exactly seven words split across two lines in a 4+3 pattern. The `tamil_kural` field preserves this line break with `\n`.
+
+```
+இடுக்கண் வருங்கால் நகுக அதனை       ← 4 words
+அடுத்தூர்வது அஃதொப்பதில்.            ← 3 words
+```
+
+## Fields
+
+<ResponseField name="kural_id" type="number" required>
+  Unique numeric identifier for the verse. Ranges from `1` to `1330`, matching the canonical ordering of the Thirukkural.
+</ResponseField>
+
+<ResponseField name="tamil_kural" type="string" required>
+  Original Tamil text of the verse. Two lines separated by `\n`, preserving the 4+3 word structure.
+</ResponseField>
+
+<ResponseField name="eng_translation" type="string" required>
+  English translation of the verse.
+</ResponseField>
+
+<ResponseField name="virtue" type="string" required>
+  The specific virtue or moral quality illustrated by this verse (e.g., `"Renunciation"`, `"Truthfulness"`, `"Endurance"`, `"Gratitude"`). More granular than `theme`.
+</ResponseField>
+
+<ResponseField name="theme" type="string" required>
+  The broad thematic division of the Thirukkural the verse belongs to. The three canonical themes are `"Virtue"` (`அறம்`), `"Wealth"` (`பொருள்`), and `"Love"` (`காமம்`).
+</ResponseField>
+
+<ResponseField name="emotion" type="string" required>
+  The primary emotion embodied or addressed by the verse (e.g., `"Joy"`, `"Grief"`, `"Determination"`, `"Anxiety"`). Used by the retriever's scoring function with a high bonus weight (`2.0`) to surface emotionally relevant verses.
+</ResponseField>
+
+<ResponseField name="modern_scenario" type="string" required>
+  A real-world modern scenario where this verse's wisdom is directly applicable (e.g., `"Staying composed after a project rejection or career setback."`). Helps the retriever match contemporary language to classical wisdom.
+</ResponseField>
+
+<ResponseField name="qa_question" type="string" required>
+  A guidance question that captures the kind of query this verse answers (e.g., `"How do I stay strong when things go wrong?"`). Part of the retriever's searchable text blob.
+</ResponseField>
+
+<ResponseField name="qa_answer" type="string" required>
+  A concise guidance answer drawn from the verse's teaching (e.g., `"Meet hardship with a smile; conquering it through equanimity is the highest courage."`). Also part of the searchable text blob.
+</ResponseField>
+
+<ResponseField name="score" type="number">
+  Retrieval relevance score assigned by `UniqueRagKuralFetcher.search()`. Only present on records inside the `retrieved_kurals` array — not stored in the dataset file itself.
+
+  The score combines three components:
+  - **Overlap score** — proportion of meaningful query tokens found in the record (`× 5.0`).
+  - **Thematic bonus** — additional weight when the query matches `emotion` (`+2.0`), `theme` (`+1.0`), or `virtue` (`+1.0`).
+  - **Sequence similarity** — partial string match ratio between the query and the record's full text blob (`× 0.5`).
+
+  Higher is more relevant. Records with a score of `≤ 0.1` are filtered out before ranking.
+</ResponseField>
+
+## Example record
+
+```json
+{
+  "kural_id": 621,
+  "tamil_kural": "இடுக்கண் வருங்கால் நகுக அதனை\nஅடுத்தூர்வது அஃதொப்பதில்.",
+  "eng_translation": "Laugh at trouble when it comes; there is no better way to conquer it than that.",
+  "virtue": "Endurance",
+  "theme": "Virtue",
+  "emotion": "Determination",
+  "modern_scenario": "Staying composed after a project rejection, exam failure, or career setback.",
+  "qa_question": "How do I stay strong when things go wrong?",
+  "qa_answer": "Meet hardship with a smile; conquering it through equanimity is the highest courage.",
+  "score": 7.2341
+}
+```
+
+<Note>
+  The `score` field is ephemeral — it is computed at query time and rounded to four decimal places before being appended to each result. It is not stored in the dataset and will vary between queries.
+</Note>

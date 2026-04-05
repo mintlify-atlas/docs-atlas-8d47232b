@@ -1,0 +1,105 @@
+---
+title: "Response models"
+description: "Pydantic models that define the shape of data returned by the Thirukkural AI API."
+---
+
+The `POST /api/v1/ask` endpoint returns an `AskResponse` object. All fields are always present in the JSON payload; optional fields may be `null`.
+
+## AskResponse
+
+<ResponseField name="question" type="string" required>
+  The original question string after whitespace trimming. Echoed back so clients can correlate responses to requests without maintaining local state.
+</ResponseField>
+
+<ResponseField name="response" type="object | null">
+  Structured response parsed from the Vertex AI model output. `null` when the model returns output that cannot be parsed into the expected structure.
+
+  <Expandable title="properties">
+    <ResponseField name="response.summary" type="string">
+      High-level summary or headline distilling the model's guidance for the user's question.
+    </ResponseField>
+    <ResponseField name="response.kurals" type="array">
+      Kural objects selected by the model from the retrieved context. Each entry contains a subset of Kural fields: `kural_id`, `tamil`, `english`, `virtue`, and `theme`.
+    </ResponseField>
+    <ResponseField name="response.actions" type="object">
+      Key/value pairs of actionable guidance. Keys are step labels (e.g., `"Step 1"`); values are prose instructions drawn from the selected Kural wisdom.
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+<ResponseField name="raw_response" type="string" required>
+  The raw string output from the Vertex AI (Gemini) model before any JSON parsing is attempted. Always present. Use this field for debugging or to display a fallback when `response` is `null`.
+</ResponseField>
+
+<ResponseField name="plan" type="object | null">
+  Agent planning metadata generated before the final response. `null` if the model did not produce a planning phase.
+
+  <Expandable title="properties">
+    <ResponseField name="plan.situation_summary" type="string">
+      Brief summary of the user's situation as understood by the model before it retrieved Kurals.
+    </ResponseField>
+    <ResponseField name="plan.emotional_tone" type="string">
+      Dominant emotional tone detected in the question (e.g., `"grief"`, `"anxiety"`, `"determination"`).
+    </ResponseField>
+    <ResponseField name="plan.likely_needs" type="string[]">
+      List of inferred user needs (e.g., `["reassurance", "practical steps", "philosophical grounding"]`).
+    </ResponseField>
+    <ResponseField name="plan.action_outline" type="string[]">
+      High-level steps the model planned to take when constructing its answer.
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+<ResponseField name="retrieved_kurals" type="array" required>
+  Full Kural records retrieved by the `UniqueRagKuralFetcher` and injected into the model's context window. Each entry is a [Kural record](/api/models/kural) augmented with a `score` field. The array is ordered by descending relevance score. Up to 5 records are returned by default (`top_k=5`).
+</ResponseField>
+
+## Full example response
+
+```json
+{
+  "question": "I am feeling overwhelmed at work and do not know how to cope.",
+  "response": {
+    "summary": "Thiruvalluvar teaches that burdens are lightened by endurance and the company of the wise.",
+    "kurals": [
+      {
+        "kural_id": 621,
+        "tamil": "இடுக்கண் வருங்கால் நகுக அதனை\nஅடுத்தூர்வது அஃதொப்பதில்.",
+        "english": "Laugh at trouble when it comes; there is no better way to conquer it than that.",
+        "virtue": "Endurance",
+        "theme": "Virtue"
+      }
+    ],
+    "actions": {
+      "Step 1": "Name what is overwhelming you without judgement.",
+      "Step 2": "Seek the counsel of someone wiser or more experienced.",
+      "Step 3": "Take one small deliberate action today rather than trying to solve everything at once."
+    }
+  },
+  "raw_response": "Kural #621 on Endurance is highly relevant here. Thiruvalluvar teaches...",
+  "plan": {
+    "situation_summary": "User is experiencing work-related stress and feels unable to manage their current load.",
+    "emotional_tone": "anxiety",
+    "likely_needs": ["coping strategies", "reassurance", "practical guidance"],
+    "action_outline": [
+      "Retrieve Kurals related to endurance and burden",
+      "Identify actionable steps from the verses",
+      "Frame response with compassionate tone"
+    ]
+  },
+  "retrieved_kurals": [
+    {
+      "kural_id": 621,
+      "tamil_kural": "இடுக்கண் வருங்கால் நகுக அதனை\nஅடுத்தூர்வது அஃதொப்பதில்.",
+      "eng_translation": "Laugh at trouble when it comes; there is no better way to conquer it than that.",
+      "virtue": "Endurance",
+      "theme": "Virtue",
+      "emotion": "Determination",
+      "modern_scenario": "Staying composed under heavy workload or tight deadlines.",
+      "qa_question": "How do I cope when I feel overwhelmed?",
+      "qa_answer": "Meet hardship with equanimity; that composed endurance is your greatest strength.",
+      "score": 8.1250
+    }
+  ]
+}
+```

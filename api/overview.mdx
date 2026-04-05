@@ -1,0 +1,60 @@
+---
+title: "API overview"
+description: "HTTP interface for the Vertex-backed Thirukkural AI agent. Submit questions and receive personalized Kural wisdom powered by Google Vertex AI (Gemini)."
+---
+
+The Thirukkural AI API is a FastAPI application (`title: "Thirukkural AI Agent API"`, `version: "0.1.0"`) that exposes the Thirukkural agent over HTTP. It accepts free-form questions and an optional personality profile, then returns structured Kural wisdom retrieved via a keyword-based RAG retriever backed by Google Vertex AI (Gemini).
+
+## Base URL
+
+```
+http://localhost:8000
+```
+
+The base URL is configurable via the `NEXT_PUBLIC_AGENT_API` environment variable in the frontend. If the variable is not set, the client defaults to `http://localhost:8000`.
+
+## Available endpoints
+
+<CardGroup cols={2}>
+  <Card title="POST /api/v1/ask" icon="paper-plane" href="/api/ask">
+    Submit a free-form question and optional personality profile to receive personalized Kural wisdom.
+  </Card>
+  <Card title="GET /health" icon="heart-pulse" href="/api/health">
+    Check that the API server is running. Suitable for load balancer health checks.
+  </Card>
+</CardGroup>
+
+## Response format
+
+All responses are JSON. Successful responses return HTTP `200`. Error responses return a JSON object with a `detail` field describing the problem.
+
+```json
+{ "detail": "Question cannot be empty" }
+```
+
+## CORS
+
+The server is configured to accept requests from any origin:
+
+```python
+allow_origins=["*"]
+allow_credentials=True
+allow_methods=["*"]
+allow_headers=["*"]
+```
+
+No preflight configuration is required when calling the API from a browser.
+
+## Quick start
+
+Check that the server is running:
+
+```bash
+curl http://localhost:8000/health
+```
+
+Expected response:
+
+```json
+{ "status": "ok" }
+```

@@ -1,0 +1,38 @@
+---
+title: "Health check"
+description: "Verify that the Thirukkural AI API server is running and ready to accept requests."
+---
+
+Returns a static `{"status": "ok"}` payload as soon as the server process is up. Use this endpoint for load balancer health checks, uptime monitors, and readiness probes.
+
+## Request
+
+`GET /health`
+
+No request body or query parameters are required.
+
+## Response
+
+```json
+{ "status": "ok" }
+```
+
+| Field | Type | Description |
+| --- | --- | --- |
+| `status` | string | Always `"ok"` when the server is running. |
+
+## Example
+
+```bash
+curl http://localhost:8000/health
+```
+
+Response:
+
+```json
+{ "status": "ok" }
+```
+
+<Note>
+  The health endpoint only confirms that the HTTP server process is running. It does not verify connectivity to Google Vertex AI or that the Kural dataset loaded correctly. A `200` response here does not guarantee that `/api/v1/ask` will succeed.
+</Note>

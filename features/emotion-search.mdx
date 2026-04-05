@@ -1,0 +1,178 @@
+---
+title: "Emotion search"
+description: "Type how you feel or pick from preset emotion suggestions. The backend expands your query using synonym mapping, scores every Kural, and returns the most relevant matches."
+---
+
+The emotion search bar is the primary way to find Kurals. You describe your emotional state in plain language — or select one of the preset suggestions — and the backend retrieves the Kurals that best match what you are feeling.
+
+## Entering a query
+
+<CardGroup cols={2}>
+  <Card title="Free-text input" icon="keyboard">
+    Type anything in the search bar: *"I feel lost and don't know what to do"*, *"I'm angry at someone I trusted"*, or just *"depressed"*. The retriever handles natural language and single keywords equally well.
+  </Card>
+  <Card title="Emotion suggestions" icon="sparkles">
+    Twelve preset chips appear below the search bar. Clicking one populates the input automatically.
+
+    Joy · Sadness · Anger · Fear · Forgiveness · Strength · Peace · Heartbreak · Confusion · Gratitude · Frustration · Hope
+  </Card>
+</CardGroup>
+
+Once you have entered a query, press **Get My Kural** to send it to the backend.
+
+## The UniqueRagKuralFetcher retriever
+
+The backend uses `UniqueRagKuralFetcher` (defined in `backend/subModules/uragkf.py`) to score and rank every Kural in the dataset against your query.
+
+### Startup: building the index
+
+When the fetcher is instantiated it reads `dataset/raw/kural_data_raw.json` and builds a search index over every record:
+
+```python
+# uragkf.py — _prepare_index()
+for record in self.records:
+    blob_parts = [
+        record.get("eng_translation", ""),
+        record.get("tamil_kural", ""),
+        record.get("theme", ""),
+        record.get("virtue", ""),
+        record.get("emotion", ""),
+        record.get("modern_scenario", ""),
+        record.get("qa_question", ""),
+        record.get("qa_answer", ""),
+    ]
+    normalized_blob = self._normalize(" ".join(blob_parts))
+    record["_search_blob"] = normalized_blob
+    record["_tokens"] = set(normalized_blob.split())
+```
+
+Every record gets two pre-computed fields:
+
+| Field | Contents |
+|-------|----------|
+| `_search_blob` | All eight text fields joined, lowercased, and stripped of punctuation |
+| `_tokens` | Set of individual tokens from `_search_blob` for fast intersection |
+
+### Text normalisation
+
+```python
+@staticmethod
+def _normalize(text: str) -> str:
+    cleaned = re.sub(r"[^a-z0-9\s]", " ", text.lower())
+    return re.sub(r"\s+", " ", cleaned).strip()
+```
+
+Input is lowercased and every non-alphanumeric character is replaced with a space. Multiple spaces are collapsed. This means `"grief/sadness"` and `"grief sadness"` both tokenise identically.
+
+### Query expansion via SYNONYM_MAP
+
+Before scoring, each token in your query is checked against `SYNONYM_MAP`. Matching tokens are replaced with — or supplemented by — their synonyms so that colloquial words resolve to the emotional vocabulary used in the dataset.
+
+```python
+SYNONYM_MAP = {
+    "depressed":  ["despair", "grief", "sadness", "suffering", "hopelessness", "melancholy", "misery", "anguish"],
+    "depression": ["despair", "grief", "sadness", "suffering", "hopelessness", "melancholy", "misery", "anguish"],
+    "sad":        ["sadness", "sorrow", "grief", "misery"],
+    "anxious":    ["anxiety", "fear", "worry", "dread", "restlessness"],
+    "anxiety":    ["anxiety", "fear", "worry", "dread", "restlessness"],
+    "angry":      ["anger", "wrath", "severity", "harshness"],
+    "anger":      ["anger", "wrath", "severity", "harshness"],
+    "happy":      ["joy", "delight", "bliss", "cheerfulness"],
+    "happiness":  ["joy", "delight", "bliss", "cheerfulness"],
+    "confused":   ["confusion", "doubt", "uncertainty", "bewilderment"],
+    "confusion":  ["confusion", "doubt", "uncertainty", "bewilderment"],
+    "lonely":     ["loneliness", "isolation", "alienation"],
+    "loneliness": ["loneliness", "isolation", "alienation"],
+    "tired":      ["exhaustion", "weariness", "fatigue"],
+    "stress":     ["burden", "pressure", "anxiety", "overwhelmed"],
+    "stressed":   ["burden", "pressure", "anxiety", "overwhelmed"],
+    "love":       ["affection", "devotion", "intimacy", "tenderness"],
+    "money":      ["wealth", "prosperity", "poverty", "destitution"],
+    "rich":       ["wealth", "prosperity", "abundance"],
+    "poor":       ["poverty", "destitution", "deprivation"],
+}
+```
+
+**Example:** the query `"I feel depressed"` expands to:
+```
+{"i", "feel", "depressed"}
+  → {"i", "feel", "depressed", "despair", "grief", "sadness", "suffering",
+     "hopelessness", "melancholy", "misery", "anguish"}
+```
+
+The expanded token set is then used for scoring. Original tokens are kept alongside the synonyms.
+
+### Scoring formula
+
+Each Kural receives a composite score:
+
+```python
+# uragkf.py — _score()
+return (overlap_score * 5.0) + thematic_bonus + (seq_score * 0.5)
+```
+
+| Component | How it is calculated | Weight |
+|-----------|----------------------|--------|
+| `overlap_score` | Fraction of meaningful query tokens present in the Kural's token set | × 5.0 |
+| `thematic_bonus` | Sum of field-level bonuses (see below) | × 1.0 |
+| `seq_score` | `SequenceMatcher` ratio between `_search_blob` and query; only computed when `intersection > 0` | × 0.5 |
+
+Stop words (`"i"`, `"the"`, `"and"`, etc.) are excluded from `meaningful_query_tokens` before the overlap fraction is computed.
+
+**Thematic bonuses:**
+
+| Field matched | Bonus |
+|---------------|-------|
+| `emotion` | +2.0 |
+| `theme` | +1.0 |
+| `virtue` | +1.0 |
+
+Any Kural scoring ≤ 0.1 is discarded as noise before the results list is assembled.
+
+### Search output
+
+`search(query, top_k=5)` returns the top five Kurals as a list of dicts. Each dict includes:
+
+```python
+{
+  "kural_id":       int,
+  "tamil_kural":    str,
+  "eng_translation": str,
+  "virtue":         str,
+  "theme":          str,
+  "emotion":        str,
+  "modern_scenario": str,
+  "qa_question":    str,
+  "qa_answer":      str,
+  "score":          float,  # rounded to 4 decimal places
+}
+```
+
+These records are then formatted into a plain-text context block via `to_context_block()` and sent to Gemini for the final response.
+
+```python
+# uragkf.py — to_context_block()
+"Kural #{kural_id} | Theme: {theme} | Virtue: {virtue}\n"
+"Tamil: {tamil_kural}\n"
+"English Translation: {eng_translation}\n"
+"Emotion: {emotion} | Modern Scenario: {modern_scenario}\n"
+"Guidance QA: Q: {qa_question} | A: {qa_answer}"
+```
+
+## "Surprise Me" feature
+
+The **Surprise Me** button bypasses search entirely. It calls `getRandomKuralByPersonality` from `quizLogic.ts`, which returns a hardcoded Kural matched to your personality type:
+
+| Personality type | Emotion tag |
+|-----------------|-------------|
+| The Wise Seeker | Wisdom |
+| The Compassionate Heart | Love |
+| The Strong Leader | Self-discipline |
+| The Peaceful Soul | Peace |
+| The Ambitious Achiever | Caution |
+
+The result is displayed immediately on the page without a backend call. The Kural is shown in whichever display language is currently active (Tamil or English).
+
+<Note>
+  "Surprise Me" always returns the same Kural for each personality type because each type currently has exactly one entry in the hardcoded map. Future versions may expand these lists to allow true random selection.
+</Note>

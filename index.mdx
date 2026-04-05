@@ -1,97 +1,52 @@
 ---
-title: "Introduction"
-description: "Welcome to the new home for your documentation"
+title: "Thirukkural.AI"
+description: "Ancient wisdom, modern understanding. Discover personalized guidance from Thirukkural through AI-powered emotion and personality matching."
 ---
 
-## Setting up
+Thirukkural.AI bridges the 2,000-year-old Tamil classic *Thirukkural* — 1,330 couplets of timeless wisdom on virtue, wealth, and love — with modern life through AI. Tell the platform how you feel, and it surfaces the Kural most relevant to your situation, along with bilingual Tamil and English text, thematic context, and actionable guidance.
 
-Get your documentation site up and running in minutes.
-
-<Card
-  title="Start here"
-  icon="rocket"
-  href="/quickstart"
-  horizontal
->
-  Follow our three step quickstart guide.
-</Card>
-
-## Make it yours
-
-Design a docs site that looks great and empowers your users.
-
-<Columns cols={2}>
-  <Card
-    title="Edit locally"
-    icon="pen-to-square"
-    href="/development"
-  >
-    Edit your docs locally and preview them in real time.
+<CardGroup cols={2}>
+  <Card title="Quick Start" icon="rocket" href="/quickstart">
+    Get from zero to your first personalized Kural in under five minutes.
   </Card>
-  <Card
-    title="Customize your site"
-    icon="palette"
-    href="/essentials/settings"
-  >
-    Customize the design and colors of your site to match your brand.
+  <Card title="Architecture" icon="diagram-project" href="/architecture">
+    Understand how the personality quiz, RAG retriever, and Vertex AI agent work together.
   </Card>
-    <Card
-    title="Set up navigation"
-    icon="map"
-    href="/essentials/navigation"
-  >
-    Organize your docs to help users find what they need and succeed with your product.
+  <Card title="API Reference" icon="code" href="/api/overview">
+    Integrate the Thirukkural agent into your own application via the REST API.
   </Card>
-  <Card
-    title="API documentation"
-    icon="terminal"
-    href="/api-reference/introduction"
-  >
-    Auto-generate API documentation from OpenAPI specifications.
+  <Card title="Core Features" icon="sparkles" href="/features/personality-quiz">
+    Explore personality profiling, emotion search, bilingual display, and more.
   </Card>
-</Columns>
+</CardGroup>
 
-## Create beautiful pages
+## How it works
 
-Everything you need to create world-class documentation.
+<Steps>
+  <Step title="Complete the personality quiz">
+    Answer 15 questions covering decision-making, values, and life philosophy. The platform scores your responses across five dimensions — wisdom, compassion, strength, harmony, and ambition — and assigns you a personality type.
+  </Step>
+  <Step title="Describe how you feel">
+    Type a free-form query ("I'm feeling overwhelmed at work") or pick from curated emotion suggestions. You can also hit **Surprise Me** for a random Kural matched to your personality.
+  </Step>
+  <Step title="Receive your Kural">
+    The AI agent retrieves the most relevant verses from the dataset, then uses Google Vertex AI (Gemini) to compose a response with the Tamil original, English translation, thematic analysis, and practical guidance tailored to your personality.
+  </Step>
+</Steps>
 
-<Columns cols={2}>
-  <Card
-    title="Write with MDX"
-    icon="pen-fancy"
-    href="/essentials/markdown"
-  >
-    Use MDX to style your docs pages.
-  </Card>
-  <Card
-    title="Code samples"
-    icon="code"
-    href="/essentials/code"
-  >
-    Add sample code to demonstrate how to use your product.
-  </Card>
-  <Card
-    title="Images"
-    icon="image"
-    href="/essentials/images"
-  >
-    Display images and other media.
-  </Card>
-  <Card
-    title="Reusable snippets"
-    icon="recycle"
-    href="/essentials/reusable-snippets"
-  >
-    Write once and reuse across your docs.
-  </Card>
-</Columns>
+## Key features
 
-## Need inspiration?
-
-<Card
-  title="See complete examples"
-  icon="stars"
-  href="https://mintlify.com/customers"
->
-  Browse our showcase of exceptional documentation sites.
-</Card>
+<CardGroup cols={2}>
+  <Card title="Personality quiz" icon="brain" href="/features/personality-quiz">
+    15-question quiz maps you to one of five personality archetypes — Wise Seeker, Compassionate Heart, Strong Leader, Peaceful Soul, or Ambitious Achiever.
+  </Card>
+  <Card title="Emotion-based search" icon="heart" href="/features/emotion-search">
+    Semantic retrieval with synonym expansion matches your emotional state to the most relevant Kurals from the full corpus of 1,330 verses.
+  </Card>
+  <Card title="AI-powered guidance" icon="wand-magic-sparkles" href="/features/kural-discovery">
+    Vertex AI (Gemini) generates personalized responses grounded in retrieved Kurals, including actionable steps and modern context.
+  </Card>
+  <Card title="Bilingual display" icon="language" href="/features/language-support">
+    Every Kural is shown in authentic Tamil script with the traditional 4+3 word line format, alongside a full English translation.
+  </Card>
+</CardGroup>

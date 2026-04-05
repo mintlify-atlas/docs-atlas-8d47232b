@@ -1,0 +1,143 @@
+---
+title: "Language support"
+description: "Every Kural is displayed in both Tamil script and English translation. A toggle switches the active display language, and a separate toggle switches the UI theme between light and dark."
+---
+
+Thirukkural.AI renders each verse in both of its source forms: Tamil script (`tamil_kural`) and English translation (`eng_translation`). Two toggles in the header let you control the display language and the colour theme independently.
+
+## Bilingual Kural display
+
+Every Kural card always shows both the Tamil text and the English translation. In the "Surprise Me" panel the active language controls which text is shown as the primary reading, with the translation appearing below it in secondary style:
+
+```tsx
+// LandingPage.tsx — Surprise Me card
+{language === 'tamil' ? randomKural.tamil : randomKural.english}
+{language === 'tamil' && <p>{randomKural.english}</p>}
+```
+
+In AI-response Kural cards, both forms are shown simultaneously regardless of the active language setting — Tamil above (formatted with the 4+3 split) and English in italics below.
+
+## Tamil text formatting
+
+Standard Thirukkural couplets consist of exactly seven metrical feet (*cir*). The `formatTamilKural` function in `LandingPage.tsx` renders this as two typographic lines — four words on the first line and three on the second — matching the traditional couplet structure.
+
+```tsx
+// LandingPage.tsx — formatTamilKural()
+const formatTamilKural = (text: string) => {
+  if (!text) return null;
+
+  // If it already has newlines, respect them
+  if (text.includes('\n')) {
+    return (
+      <div className="text-xl sm:text-2xl font-bold … font-serif">
+        {text.split('\n').map((line, i) => (
+          <p key={i}>{line}</p>
+        ))}
+      </div>
+    );
+  }
+
+  const words = text.trim().split(/\s+/);
+
+  // Standard Kural: split 4 words + 3 words
+  if (words.length >= 4) {
+    const line1 = words.slice(0, 4).join(' ');
+    const line2 = words.slice(4).join(' ');
+    return (
+      <div className="text-xl sm:text-2xl font-bold … font-serif">
+        <p>{line1}</p>
+        <p>{line2}</p>
+      </div>
+    );
+  }
+
+  // Fallback for non-standard lengths
+  return <p className="text-xl sm:text-2xl font-bold … font-serif">{text}</p>;
+};
+```
+
+The three cases handled:
+
+| Input | Behaviour |
+|-------|-----------|
+| Text contains `\n` | Split on existing newlines; each segment becomes a `<p>` |
+| 4 or more whitespace-delimited words | First four words → line 1; remainder → line 2 |
+| Fewer than 4 words | Rendered as a single paragraph (non-standard length fallback) |
+
+## Language toggle
+
+The `LanguageToggle` component (rendered in both the header and footer) calls `toggleLanguage` from the `useLanguage` hook to flip between `'tamil'` and `'english'`.
+
+```tsx
+// LanguageToggle.tsx
+{language === 'tamil' ? 'தமிழ் ⇄ English' : 'Tamil ⇄ English'}
+```
+
+The button label itself switches script to reflect the current active language.
+
+### useLanguage hook
+
+```typescript
+// hooks/useLanguage.ts
+export const useLanguage = () => {
+  const [language, setLanguage] = useState<string>('english');
+
+  useEffect(() => {
+    const saved = localStorage.getItem('language');
+    if (saved) setLanguage(saved);
+  }, []);
+
+  useEffect(() => {
+    localStorage.setItem('language', language);
+  }, [language]);
+
+  const toggleLanguage = () => {
+    setLanguage(prev => (prev === 'tamil' ? 'english' : 'tamil'));
+  };
+
+  return { language, toggleLanguage };
+};
+```
+
+<Steps>
+  <Step title="Initial state">
+    Language defaults to `'english'` on first render.
+  </Step>
+  <Step title="Persistence restored">
+    A `useEffect` reads `localStorage.getItem('language')` on mount. If a value exists, the hook updates state to match the last selected language.
+  </Step>
+  <Step title="Persistence saved">
+    A second `useEffect` writes the current language value back to `localStorage` whenever it changes, so the preference survives page reloads.
+  </Step>
+  <Step title="Toggle">
+    `toggleLanguage()` flips the value between `'tamil'` and `'english'` using a functional state update.
+  </Step>
+</Steps>
+
+## Theme toggle
+
+The `ThemeToggle` component switches between light and dark mode. It uses the `useTheme` hook, which persists the chosen theme to `localStorage` and also honours the browser's `prefers-color-scheme` system setting on first load. The component renders a Moon icon when in light mode (click to go dark) and a Sun icon when in dark mode (click to go light).
+
+```tsx
+// ThemeToggle.tsx
+{theme === 'light' ? (
+  <Moon className="w-5 h-5 text-gray-600 dark:text-gray-300" />
+) : (
+  <Sun className="w-5 h-5 text-amber-500" />
+)}
+```
+
+The toggle is fixed in the top-right corner during the personality quiz and placed in the header alongside the language toggle on the main landing page.
+
+<Tip>
+  Both the language preference and the theme are stored in `localStorage`, so your settings persist across sessions without requiring a login.
+</Tip>
+
+## Data fields reference
+
+| Field | Language | Location in dataset |
+|-------|----------|---------------------|
+| `tamil_kural` | Tamil script | `kural_data_raw.json` |
+| `eng_translation` | English | `kural_data_raw.json` |
+
+Both fields are included in every record returned by `UniqueRagKuralFetcher.search()` and are passed through to the frontend in the `kurals[]` array of the agent response.

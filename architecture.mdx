@@ -1,0 +1,334 @@
+---
+title: "Architecture"
+description: "How the Next.js frontend, FastAPI backend, custom RAG retriever, and Vertex AI Gemini model work together to produce personalized Kural recommendations."
+---
+
+## System overview
+
+Thirukkural.AI is a three-tier system. The browser sends one HTTP request per search; the backend runs retrieval and inference; the result flows back as a structured JSON object.
+
+```
+Browser (Next.js 16)
+        │
+        │  POST /api/v1/ask
+        │  { question, personality }
+        ▼
+FastAPI server (api_server.py)
+        │
+        ├─► UniqueRagKuralFetcher  ──► kural_data_raw.json
+        │        (uragkf.py)
+        │        scores & ranks kurals
+        │        returns top_k results
+        │
+        ├─► Context block builder
+        │        formats kural metadata
+        │        into a structured prompt block
+        │
+        └─► Vertex AI Gemini
+                 (google-genai SDK)
+                 returns structured JSON
+                        │
+                        ▼
+              AskResponse { question, response,
+                            plan, retrieved_kurals,
+                            raw_response }
+```
+
+## Data flow
+
+<Steps>
+  <Step title="Browser submits the query">
+    The `fetchAgentResponse` function in `src/utils/agentClient.ts` sends a `POST /api/v1/ask` request with a JSON body containing the user's free-form question and their serialized `PersonalityProfile`:
+
+    ```typescript
+    body: JSON.stringify({ question: sanitized, personality })
+    ```
+
+    The `personality` object is derived from `analyzePersonality(quizAnswers)` in `quizLogic.ts` and contains `type`, `description`, and `traits`. It is stored in `localStorage` across sessions.
+  </Step>
+
+  <Step title="FastAPI validates and routes the request">
+    `api_server.py` defines the `AskRequest` and `AskResponse` Pydantic models and a single POST handler:
+
+    ```python
+    class PersonalityProfile(BaseModel):
+        type: str
+        traits: List[str]
+        description: str
+
+    class AskRequest(BaseModel):
+        question: str = Field(..., description="Free-form user prompt for the agent")
+        personality: Optional[PersonalityProfile] = None
+
+    class AskResponse(BaseModel):
+        question: str
+        response: Optional[Dict[str, Any]]
+        raw_response: str
+        plan: Optional[Dict[str, Any]]
+        retrieved_kurals: List[Dict[str, Any]]
+
+    @app.post("/api/v1/ask", response_model=AskResponse)
+    def ask_agent(request: AskRequest) -> AskResponse:
+        question = request.question.strip()
+        if not question:
+            raise HTTPException(status_code=400, detail="Question cannot be empty")
+
+        personality_dict = request.personality.dict() if request.personality else None
+        result = run_agent_inference(question, personality_dict)
+        return AskResponse(**result)
+    ```
+
+    On startup, `get_agent_state()` eagerly initializes the Vertex AI client and the RAG retriever so the first request has no cold-start latency.
+  </Step>
+
+  <Step title="RAG retriever scores the corpus">
+    `UniqueRagKuralFetcher` (in `backend/subModules/uragkf.py`) loads `kural_data_raw.json` at startup and builds a search index over all 1,330 records. Each record is normalized into a single lowercase search blob combining the English translation, Tamil text, theme, virtue, emotion tag, modern scenario, and Q&A fields.
+
+    When a query arrives, the retriever:
+
+    1. Normalizes the query string (lowercase, strip punctuation).
+    2. Expands query tokens using a synonym map — for example, `"depressed"` expands to `["despair", "grief", "sadness", "suffering", "hopelessness", "melancholy", "misery", "anguish"]`.
+    3. Scores every record using the composite formula below.
+    4. Filters out records with a score below `0.1`.
+    5. Returns the top-`k` results (default `k = 5`).
+  </Step>
+
+  <Step title="Context block is assembled">
+    The top-k results are formatted into a structured text block by `UniqueRagKuralFetcher.to_context_block()`:
+
+    ```python
+    @staticmethod
+    def to_context_block(results: List[Dict[str, Any]]) -> str:
+        lines: List[str] = []
+        for entry in results:
+            lines.append(
+                "\n".join([
+                    f"Kural #{entry.get('kural_id', 'N/A')} | Theme: {entry.get('theme', 'Unknown')} | Virtue: {entry.get('virtue', 'Unknown')}",
+                    f"Tamil: {entry.get('tamil_kural', '').strip()}",
+                    f"English Translation: {entry.get('eng_translation', '').strip()}",
+                    f"Emotion: {entry.get('emotion', 'Unknown')} | Modern Scenario: {entry.get('modern_scenario', '').strip()}",
+                    f"Guidance QA: Q: {entry.get('qa_question', '').strip()} | A: {entry.get('qa_answer', '').strip()}",
+                ])
+            )
+        return "\n\n".join(lines)
+    ```
+
+    This block, combined with the user's question and personality profile, forms the prompt sent to Gemini.
+  </Step>
+
+  <Step title="Vertex AI Gemini generates the structured response">
+    The backend calls the `google-genai` SDK with the Vertex AI endpoint configured via the `VERTEX_ENDPOINT` environment variable. The system instruction tells Gemini to act as Thiruvalluvar's assistant and to ground every answer in specific Thirukkural verses.
+
+    ```python
+    client = genai.Client(
+        vertexai=True,
+        project=project_id,
+        location=location,
+    )
+    ```
+
+    The model is invoked with:
+    - Temperature: `0.85`
+    - Top-p: `0.95`
+    - Max output tokens: `65535`
+
+    Gemini returns a JSON-structured response with `summary`, `kurals`, `plan`, and `actions` fields. The backend parses this output and returns it as the `response` field of `AskResponse`.
+  </Step>
+
+  <Step title="Response is rendered in the browser">
+    The frontend receives the `AskResponse` payload and renders:
+    - The `response.summary` as a headline
+    - Each `response.kurals` entry in a card with Tamil text (formatted in the 4+3 word split), English translation, virtue, and theme
+    - The `response.actions` key-value pairs as labeled guidance bullets
+    - An expandable analysis panel with planner details and RAG retrieval stats from `plan` and `retrieved_kurals`
+  </Step>
+</Steps>
+
+## RAG scoring formula
+
+Every Kural is scored against the incoming query using a three-part composite formula defined in `uragkf.py:131`:
+
+```python
+return (overlap_score * 5.0) + thematic_bonus + (seq_score * 0.5)
+```
+
+### Overlap score
+
+The fraction of meaningful query tokens (stop words removed) that appear in the record's search blob:
+
+```python
+meaningful_query_tokens = {t for t in query_tokens if t not in STOP_WORDS}
+intersection = len(meaningful_query_tokens & tokens)
+overlap_score = intersection / len(meaningful_query_tokens)
+```
+
+The `5.0` multiplier makes token coverage the dominant signal. A query where every meaningful word matches a record scores `5.0` on this component alone.
+
+### Thematic bonus
+
+Additional weight is added when meaningful query tokens match the record's structured metadata fields directly:
+
+| Field matched | Bonus weight |
+|---------------|-------------|
+| `emotion` | `+2.0` |
+| `theme` | `+1.0` |
+| `virtue` | `+1.0` |
+
+An emotion match adds the most weight because the `emotion` field in the dataset represents the primary affective classification of each Kural — a direct match is a strong signal of relevance.
+
+### Sequence score
+
+A `SequenceMatcher` ratio between the full search blob and the normalized query blob, weighted at `0.5`. This is only computed when there is at least one token overlap, to avoid the performance cost of fuzzy matching on unrelated records:
+
+```python
+seq_score = 0.0
+if intersection > 0:
+    seq_score = SequenceMatcher(None, record.get("_search_blob", ""), query_blob).ratio()
+```
+
+### Synonym expansion
+
+Before scoring, the retriever expands query tokens using a built-in synonym map. This ensures that everyday words map to the vocabulary used in the dataset. A selection of the mappings:
+
+```python
+SYNONYM_MAP = {
+    "depressed": ["despair", "grief", "sadness", "suffering", "hopelessness", "melancholy", "misery", "anguish"],
+    "anxious":   ["anxiety", "fear", "worry", "dread", "restlessness"],
+    "angry":     ["anger", "wrath", "severity", "harshness"],
+    "love":      ["affection", "devotion", "intimacy", "tenderness"],
+    "money":     ["wealth", "prosperity", "poverty", "destitution"],
+    # ... more mappings in uragkf.py
+}
+```
+
+## Personality engine
+
+The personality system runs entirely in the browser (`src/utils/quizLogic.ts`). It assigns point values to each quiz answer across five dimensions and resolves the highest scorer to a personality type.
+
+### Scoring map (selected entries)
+
+```typescript
+const SCORING_MAP: Record<number, Record<string, Partial<Record<string, number>>>> = {
+  1:  { A: { wisdom: 2 },      B: { compassion: 2 },           C: { harmony: 2 },  D: { strength: 2 } },
+  2:  { A: { wisdom: 2 },      B: { compassion: 1 },           C: { harmony: 1 },  D: { ego: 3, strength: 1 } },
+  4:  { A: { harmony: 2, compassion: 1 }, B: { compassion: 2, wisdom: 1 }, C: { harmony: 1 }, D: { ego: 3, strength: 1 } },
+  9:  { A: { wisdom: 2 },      B: { compassion: 2 },           C: { ego: 2, strength: 1 }, D: { harmony: 2 } },
+  15: { A: { wisdom: 2 },      B: { compassion: 2 },           C: { ego: 2, strength: 2 }, D: { harmony: 2 } },
+  // ... all 15 questions in quizLogic.ts
+};
+```
+
+### Type resolution
+
+```typescript
+const scores = { wisdom, compassion, strength, harmony, ego };
+const maxScore = Math.max(...Object.values(scores));
+
+if (ego === maxScore || (ego > 5 && ego >= strength)) {
+  return { type: 'The Ambitious Achiever', ... };
+} else if (wisdom === maxScore) {
+  return { type: 'The Wise Seeker', ... };
+} else if (compassion === maxScore) {
+  return { type: 'The Compassionate Heart', ... };
+} else if (strength === maxScore) {
+  return { type: 'The Strong Leader', ... };
+} else {
+  return { type: 'The Peaceful Soul', ... };  // harmony wins by default
+}
+```
+
+The ego override fires first — before any other dimension check — because ambition can co-occur with strength and the system is designed to surface it explicitly as a caution rather than let it blend into leadership traits.
+
+## Key data structures
+
+### AskRequest
+
+Sent from the frontend to `POST /api/v1/ask`.
+
+```python
+class PersonalityProfile(BaseModel):
+    type: str          # e.g. "The Wise Seeker"
+    traits: List[str]  # e.g. ["Analytical", "Ethical", "Thoughtful"]
+    description: str   # e.g. "You value knowledge, truth, and ethical decision-making"
+
+class AskRequest(BaseModel):
+    question: str                            # required; free-form user prompt
+    personality: Optional[PersonalityProfile] = None
+```
+
+### AskResponse
+
+Returned from `POST /api/v1/ask`.
+
+```python
+class AskResponse(BaseModel):
+    question: str                              # echoed back from the request
+    response: Optional[Dict[str, Any]]         # parsed Gemini output
+    raw_response: str                          # raw model text
+    plan: Optional[Dict[str, Any]]             # planner stage output
+    retrieved_kurals: List[Dict[str, Any]]     # RAG results with kural_id and score
+```
+
+### Kural dataset record
+
+Each record in `kural_data_raw.json` has the following fields (the retriever also adds `_search_blob` and `_tokens` at load time):
+
+| Field | Description |
+|-------|-------------|
+| `kural_id` | Integer 1–1330 |
+| `tamil_kural` | Tamil text of the couplet |
+| `eng_translation` | English translation |
+| `virtue` | Virtue chapter name |
+| `theme` | Thematic category |
+| `emotion` | Primary emotion tag |
+| `modern_scenario` | Contemporary life application |
+| `qa_question` | Guidance question |
+| `qa_answer` | Guidance answer |
+
+## Project structure
+
+<Tree>
+  <Tree.Folder name="Thirukkural.AI" defaultOpen>
+    <Tree.Folder name="frontend_new" defaultOpen>
+      <Tree.Folder name="src">
+        <Tree.Folder name="app">
+          <Tree.File name="page.tsx" />
+        </Tree.Folder>
+        <Tree.Folder name="components">
+          <Tree.File name="LandingPage.tsx" />
+          <Tree.File name="PersonalityQuiz.tsx" />
+        </Tree.Folder>
+        <Tree.Folder name="utils">
+          <Tree.File name="agentClient.ts" />
+          <Tree.File name="quizLogic.ts" />
+        </Tree.Folder>
+      </Tree.Folder>
+      <Tree.File name="package.json" />
+    </Tree.Folder>
+    <Tree.Folder name="backend" defaultOpen>
+      <Tree.Folder name="mainModules">
+        <Tree.File name="api_server.py" />
+        <Tree.File name="api_req.py" />
+      </Tree.Folder>
+      <Tree.Folder name="subModules">
+        <Tree.File name="uragkf.py" />
+      </Tree.Folder>
+    </Tree.Folder>
+    <Tree.Folder name="dataset">
+      <Tree.Folder name="raw">
+        <Tree.File name="kural_data_raw.json" />
+      </Tree.Folder>
+    </Tree.Folder>
+  </Tree.Folder>
+</Tree>
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Quick start" icon="rocket" href="/quickstart">
+    Run the backend and frontend locally and send your first API request.
+  </Card>
+  <Card title="API reference" icon="code" href="/api/overview">
+    Full reference for request fields, response fields, and error handling.
+  </Card>
+</CardGroup>

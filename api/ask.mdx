@@ -1,0 +1,183 @@
+---
+title: "Ask the agent"
+description: "Submit a free-form question and optional personality profile to receive personalized Kural wisdom from the Thirukkural."
+---
+
+`POST /api/v1/ask`
+
+Submit a question to the Thirukkural AI agent. The server retrieves the most relevant Kural verses from the dataset using a keyword-based RAG retriever, passes them as context to the Vertex AI (Gemini) model, and returns a structured response alongside the raw model output and retrieved verses.
+
+## Request body
+
+<ParamField body="question" type="string" required>
+  Free-form user prompt for the agent. Must not be empty after trimming whitespace. Ask anything related to life, ethics, emotion, relationships, or decision-making.
+</ParamField>
+
+<ParamField body="personality" type="object">
+  Optional personality profile derived from the onboarding quiz. When provided, the agent tailors its selection and framing of Kural wisdom to match the user's traits.
+
+  <Expandable title="properties">
+    <ParamField body="personality.type" type="string" required>
+      Personality type label (e.g., `"The Wise Seeker"`, `"The Compassionate Heart"`).
+    </ParamField>
+    <ParamField body="personality.traits" type="string[]" required>
+      List of trait strings that characterize the personality (e.g., `["Analytical", "Ethical", "Thoughtful"]`).
+    </ParamField>
+    <ParamField body="personality.description" type="string" required>
+      A prose description of what this personality type values and how it approaches life's challenges.
+    </ParamField>
+  </Expandable>
+</ParamField>
+
+## Response
+
+<ResponseField name="question" type="string" required>
+  The original question string that was submitted, after whitespace trimming.
+</ResponseField>
+
+<ResponseField name="response" type="object | null">
+  Structured response object parsed from the model's output. `null` if the model returned unparseable output.
+
+  <Expandable title="properties">
+    <ResponseField name="response.summary" type="string">
+      High-level summary or headline distilling the model's guidance.
+    </ResponseField>
+    <ResponseField name="response.kurals" type="array">
+      Selected Kural objects the model chose to highlight, each containing `kural_id`, `tamil`, `english`, `virtue`, and `theme`.
+    </ResponseField>
+    <ResponseField name="response.actions" type="object">
+      Key/value pairs of actionable guidance drawn from the selected Kurals (e.g., `"Step 1": "Acknowledge the difficulty..."`).
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+<ResponseField name="raw_response" type="string" required>
+  The raw string output from the Vertex AI model before any parsing. Always present even when `response` is `null`.
+</ResponseField>
+
+<ResponseField name="plan" type="object | null">
+  Agent planning metadata produced before generating the final response. `null` if the model skipped the planning phase.
+
+  <Expandable title="properties">
+    <ResponseField name="plan.situation_summary" type="string">
+      A brief summary of the user's situation as understood by the model.
+    </ResponseField>
+    <ResponseField name="plan.emotional_tone" type="string">
+      The emotional tone detected in the question (e.g., `"grief"`, `"determination"`).
+    </ResponseField>
+    <ResponseField name="plan.likely_needs" type="string[]">
+      List of needs the model identified from the question.
+    </ResponseField>
+    <ResponseField name="plan.action_outline" type="string[]">
+      High-level steps the model planned to address before generating the full response.
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+<ResponseField name="retrieved_kurals" type="array" required>
+  The Kural records retrieved by the RAG retriever and injected as context into the model. Each entry includes all Kural fields plus a relevance `score`. See [Kural data model](/api/models/kural) for the full field reference.
+</ResponseField>
+
+## Error codes
+
+| Status | Condition |
+| --- | --- |
+| `400` | `question` is empty or whitespace-only after trimming. |
+| `500` | The model invocation raised a `ValueError` (e.g., `VERTEX_ENDPOINT` misconfigured). |
+| `502` | An unexpected SDK error occurred during model invocation. |
+
+## Examples
+
+<Tabs>
+  <Tab title="curl — with personality">
+    ```bash
+    curl --request POST \
+      --url http://localhost:8000/api/v1/ask \
+      --header "Content-Type: application/json" \
+      --data '{
+        "question": "I am feeling overwhelmed at work and do not know how to cope.",
+        "personality": {
+          "type": "The Wise Seeker",
+          "traits": ["Analytical", "Ethical", "Thoughtful"],
+          "description": "You value knowledge, truth, and ethical decision-making."
+        }
+      }'
+    ```
+  </Tab>
+  <Tab title="curl — minimal">
+    ```bash
+    curl --request POST \
+      --url http://localhost:8000/api/v1/ask \
+      --header "Content-Type: application/json" \
+      --data '{"question": "How should I handle failure?"}'
+    ```
+  </Tab>
+  <Tab title="TypeScript">
+    ```typescript
+    import { fetchAgentResponse } from "@/utils/agentClient";
+
+    // Minimal request
+    const result = await fetchAgentResponse("How should I handle failure?");
+
+    // With personality profile
+    const result = await fetchAgentResponse(
+      "I am feeling overwhelmed at work and do not know how to cope.",
+      {
+        type: "The Wise Seeker",
+        traits: ["Analytical", "Ethical", "Thoughtful"],
+        description:
+          "You value knowledge, truth, and ethical decision-making.",
+      }
+    );
+
+    console.log(result.raw_response);
+    console.log(result.retrieved_kurals);
+    ```
+  </Tab>
+</Tabs>
+
+### Example response
+
+```json
+{
+  "question": "How should I handle failure?",
+  "response": {
+    "summary": "Failure is a teacher. Thiruvalluvar urges you to persist with determination and learn from each setback.",
+    "kurals": [
+      {
+        "kural_id": 621,
+        "tamil": "இடுக்கண் வருங்கால் நகுக அதனை\nஅடுத்தூர்வது அஃதொப்பதில்.",
+        "english": "Laugh at trouble when it comes; there is no better way to conquer it than that.",
+        "virtue": "Endurance",
+        "theme": "Virtue"
+      }
+    ],
+    "actions": {
+      "Step 1": "Acknowledge the setback without self-judgement.",
+      "Step 2": "Identify what the failure reveals about your approach.",
+      "Step 3": "Persist with renewed effort, guided by the virtue of endurance."
+    }
+  },
+  "raw_response": "Kural #621 teaches us that the best response to adversity is composed resilience...",
+  "plan": {
+    "situation_summary": "User is seeking guidance on responding to personal or professional failure.",
+    "emotional_tone": "uncertainty",
+    "likely_needs": ["reassurance", "practical steps", "philosophical grounding"],
+    "action_outline": ["Retrieve endurance-related Kurals", "Frame actionable steps", "Provide Tamil verse"]
+  },
+  "retrieved_kurals": [
+    {
+      "kural_id": 621,
+      "tamil_kural": "இடுக்கண் வருங்கால் நகுக அதனை\nஅடுத்தூர்வது அஃதொப்பதில்.",
+      "eng_translation": "Laugh at trouble when it comes; there is no better way to conquer it than that.",
+      "virtue": "Endurance",
+      "theme": "Virtue",
+      "emotion": "Determination",
+      "modern_scenario": "Staying composed after a project rejection or career setback.",
+      "qa_question": "How do I stay strong when things go wrong?",
+      "qa_answer": "Meet hardship with a smile; conquering it through equanimity is the highest courage.",
+      "score": 7.2341
+    }
+  ]
+}
+```

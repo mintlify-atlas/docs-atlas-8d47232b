@@ -1,0 +1,92 @@
+---
+title: "Introduction"
+description: "Thirukkural.AI is an AI-powered platform that surfaces personalized wisdom from the Thirukkural — a 2,000-year-old Tamil classic of 1,330 couplets — based on your emotions and personality."
+---
+
+## What is Thirukkural.AI?
+
+The *Thirukkural* is a collection of 1,330 two-line couplets (*kurals*) written by the Tamil poet-philosopher Thiruvalluvar. Organized into three books — Virtue (*Aram*), Wealth (*Porul*), and Love (*Inbam*) — it covers topics ranging from ethics and governance to friendship, grief, and desire. Scholars regard it as one of the greatest works of world literature, yet its classical Tamil and aphoristic density make it difficult to engage with in daily life.
+
+Thirukkural.AI closes that gap. You describe how you feel — in plain English or Tamil — and the platform retrieves the most relevant verse from the full corpus, then uses Google Vertex AI (Gemini) to explain the kural in the context of your specific situation, your personality type, and modern life.
+
+## The problem it solves
+
+Ancient wisdom texts are hard to access in two ways:
+
+1. **Discovery** — You cannot browse 1,330 verses looking for one that matches your current emotion. The signal-to-noise ratio is too high.
+2. **Interpretation** — Even when you find a relevant kural, the classical Tamil and terse couplet format require significant background to unpack into practical guidance.
+
+Thirukkural.AI solves both problems. A custom retrieval-augmented generation (RAG) pipeline scores every verse against your query using keyword overlap, thematic matching, and sequence similarity. The top results are passed to Gemini, which synthesizes them into a personalized response with Tamil text, English translation, thematic analysis, and actionable guidance calibrated to your personality type.
+
+## Personality types
+
+Before you search, Thirukkural.AI asks you fifteen questions covering decision-making style, values, conflict response, and life philosophy. Your answers are scored across five dimensions — wisdom, compassion, strength, harmony, and ambition — and assigned to one of five personality archetypes.
+
+<AccordionGroup>
+  <Accordion title="The Wise Seeker" icon="lightbulb">
+    **Dominant dimension:** Wisdom
+
+    You value knowledge, truth, and ethical decision-making. You make choices based on logic and facts, learn from failure, and use spare time to reflect or acquire new understanding. The platform surfaces kurals from the *Aram* book that speak to discernment, integrity, and the pursuit of learning.
+
+    **Traits:** Analytical, Ethical, Thoughtful
+  </Accordion>
+
+  <Accordion title="The Compassionate Heart" icon="heart">
+    **Dominant dimension:** Compassion
+
+    You prioritize relationships, empathy, and understanding. You approach love with deep commitment, help others in your spare time, and want to be remembered for the difference you made. The platform emphasizes kurals about love (*Anbu*), hospitality, and the bonds between people.
+
+    **Traits:** Empathetic, Kind, Understanding
+  </Accordion>
+
+  <Accordion title="The Strong Leader" icon="shield">
+    **Dominant dimension:** Strength
+
+    You embody courage, determination, and leadership. You stand firm in conflict, recover quickly from failure, and believe effort creates your path. The platform highlights kurals from the *Porul* book on governance, self-discipline, and overcoming adversity.
+
+    **Traits:** Courageous, Determined, Leadership
+  </Accordion>
+
+  <Accordion title="The Peaceful Soul" icon="leaf">
+    **Dominant dimension:** Harmony
+
+    You seek balance, inner peace, and consensus. You calm conflicts, forgive readily, and see life as a mix of effort and destiny. The platform surfaces kurals about equanimity, forgiveness, and the virtue of a measured life.
+
+    **Traits:** Balanced, Peaceful, Harmonious
+  </Accordion>
+
+  <Accordion title="The Ambitious Achiever" icon="trophy">
+    **Dominant dimension:** Ego / Ambition (override)
+
+    You are driven by success, status, and personal victory. The platform applies an ego override — if your ego score reaches the maximum or exceeds five points while matching or beating your strength score, this type is assigned regardless of other dimensions. Kurals are chosen to temper pride with judgment and long-term perspective.
+
+    **Traits:** Ambitious, Prideful, Determined
+  </Accordion>
+</AccordionGroup>
+
+<Note>
+  Your personality result is stored in `localStorage` and used to personalize every subsequent Kural response. You can retake the quiz at any time from the landing page.
+</Note>
+
+## Tech stack
+
+| Layer | Technology |
+|-------|------------|
+| Frontend | Next.js 16 (React 19), TypeScript, Tailwind CSS v4, Framer Motion |
+| Backend | FastAPI (Python), Uvicorn |
+| AI model | Google Vertex AI — Gemini (via `google-genai` SDK) |
+| Retrieval | Custom RAG retriever (`UniqueRagKuralFetcher`) scoring against `kural_data_raw.json` |
+| State | Browser `localStorage` for quiz answers and personality profile |
+
+The frontend communicates with the backend through a single REST endpoint — `POST /api/v1/ask` — sending the user's question and personality profile, and receiving a structured response with a summary, a list of matching kurals, and actionable guidance.
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Quick start" icon="rocket" href="/quickstart">
+    Walk through the full user flow — personality quiz, emotion search, and receiving your first Kural — with real curl and TypeScript examples.
+  </Card>
+  <Card title="Architecture" icon="diagram-project" href="/architecture">
+    Understand the RAG pipeline, scoring formula, personality engine, and Vertex AI agent flow in detail.
+  </Card>
+</CardGroup>

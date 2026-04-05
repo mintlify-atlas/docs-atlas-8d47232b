@@ -1,0 +1,102 @@
+---
+title: "Dataset"
+description: "Structure of the Kural dataset, the search index, and the Gemini fine-tuning pipeline."
+---
+
+<Note>
+  The dataset file must exist at `dataset/raw/kural_data_raw.json` before starting the backend. `UniqueRagKuralFetcher` raises a `FileNotFoundError` on startup if the file is missing. The file is excluded from version control by `.gitignore`.
+</Note>
+
+## Kural records
+
+The dataset is a JSON array stored at `dataset/raw/kural_data_raw.json`. Each element represents one verse from the Thirukkural (verses 1–1330).
+
+### Record schema
+
+| Field | Description |
+|-------|-------------|
+| `kural_id` | Unique numeric identifier for the Kural (1–1330) |
+| `tamil_kural` | Original Tamil text of the verse |
+| `eng_translation` | English translation |
+| `theme` | Broad thematic category (e.g., Virtue, Wealth, Love) |
+| `virtue` | Specific virtue or quality the verse addresses |
+| `emotion` | Primary emotion associated with the verse |
+| `modern_scenario` | Real-world modern application of the verse's wisdom |
+| `qa_question` | Guidance question derived from the verse |
+| `qa_answer` | Corresponding guidance answer |
+
+### Example record
+
+```json
+{
+  "kural_id": 1,
+  "tamil_kural": "அகர முதல எழுத்தெல்லாம் ஆதி பகவன் முதற்றே உலகு",
+  "eng_translation": "As the letter A is the beginning of all written words, so the Eternal God is the beginning of all the world.",
+  "theme": "Virtue",
+  "virtue": "Praise of God",
+  "emotion": "devotion",
+  "modern_scenario": "Acknowledging a higher power or guiding principle before embarking on any new project or endeavour.",
+  "qa_question": "How should I begin any important undertaking?",
+  "qa_answer": "Begin with gratitude and acknowledgement of the greater forces that guide your journey, just as every word begins with a foundational letter."
+}
+```
+
+## Search index
+
+When `UniqueRagKuralFetcher` loads the dataset it builds an in-memory search index over every record. The indexing logic (in `backend/subModules/uragkf.py`) works as follows:
+
+1. All text fields for a record are concatenated into a single string called `_search_blob`.
+2. The blob is normalised — lowercased and stripped of punctuation.
+3. The normalised blob is tokenised by whitespace into a `_tokens` set.
+
+```python uragkf.py
+def _prepare_index(self) -> None:
+    for record in self.records:
+        blob_parts = [
+            record.get("eng_translation", ""),
+            record.get("tamil_kural", ""),
+            record.get("theme", ""),
+            record.get("virtue", ""),
+            record.get("emotion", ""),
+            record.get("modern_scenario", ""),
+            record.get("qa_question", ""),
+            record.get("qa_answer", ""),
+        ]
+        normalized_blob = self._normalize(" ".join(blob_parts))
+        record["_search_blob"] = normalized_blob
+        record["_tokens"] = set(normalized_blob.split())
+```
+
+At query time the retriever expands user tokens using a synonym map (e.g. `"depressed"` → `["despair", "grief", "sadness", ...]`), scores each record by token overlap and field-specific bonuses (emotion matches score highest), and returns the top-k results.
+
+## Gemini fine-tuning pipeline
+
+The fine-tuned model powering the AI responses was trained on synthetically generated question-answer pairs derived from the Kural dataset. The pipeline has two stages.
+
+### Stage 1 — Generate training data (`dataset/raw/generate_data.py`)
+
+For each Kural, the script uses the Gemini API to generate 10 diverse user prompts (questions, personal struggles, situational descriptions) that the verse would address. Each prompt is paired with a consistent model output citing the Tamil verse, English translation, virtue, and theme. The output is written to `unformatted_data.jsonl` in `{"input_text": ..., "output_text": ...}` format.
+
+### Stage 2 — Format for Gemini tuning (`dataset/Gemini/gemini_formatter.py`)
+
+The formatter converts the simple `{input_text, output_text}` pairs into the **Gemini contents format** required by the fine-tuning API:
+
+```python gemini_formatter.py
+gemini_contents_data = {
+    "contents": [
+        {
+            "role": "user",
+            "parts": [{"text": user_text}]
+        },
+        {
+            "role": "model",
+            "parts": [{"text": model_text}]
+        }
+    ]
+}
+```
+
+- **Input:** `final_training_data_normalized.jsonl`
+- **Output:** `gemini_tuning_final.jsonl`
+
+The resulting `gemini_tuning_final.jsonl` file is what is uploaded to Vertex AI to fine-tune the base model for Thirukkural wisdom responses.

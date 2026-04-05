@@ -1,0 +1,57 @@
+---
+title: "Request models"
+description: "Pydantic models that define the shape of data sent to the Thirukkural AI API."
+---
+
+The API server defines two Pydantic request models in `api_server.py`. Both are used exclusively by the `POST /api/v1/ask` endpoint.
+
+## AskRequest
+
+The top-level request body for `POST /api/v1/ask`.
+
+<ParamField body="question" type="string" required>
+  Free-form user prompt for the agent. The server strips leading and trailing whitespace before processing. Returns `400` if the result is empty.
+</ParamField>
+
+<ParamField body="personality" type="PersonalityProfile">
+  Optional user personality profile. When provided, the agent uses it to personalize the framing of the Kural wisdom it returns. Omit this field to get a generic response.
+
+  <Expandable title="PersonalityProfile properties">
+    <ParamField body="type" type="string" required>
+      Personality type name. Assigned by the onboarding quiz. One of: `"The Wise Seeker"`, `"The Compassionate Heart"`, `"The Strong Leader"`, `"The Peaceful Soul"`, or `"The Ambitious Achiever"`.
+    </ParamField>
+    <ParamField body="traits" type="string[]" required>
+      List of trait strings that characterize the personality. These are surface-level adjectives the model can use to calibrate tone and emphasis (e.g., `["Analytical", "Ethical", "Thoughtful"]`).
+    </ParamField>
+    <ParamField body="description" type="string" required>
+      Prose description of the personality type. Explains what the type values and how it approaches challenges. This is passed directly to the model as context.
+    </ParamField>
+  </Expandable>
+</ParamField>
+
+## Examples
+
+### Full request with PersonalityProfile
+
+```json
+{
+  "question": "I feel guilty about prioritizing my own goals over my family's expectations.",
+  "personality": {
+    "type": "The Compassionate Heart",
+    "traits": ["Empathetic", "Kind", "Understanding"],
+    "description": "You prioritize relationships, empathy, and understanding."
+  }
+}
+```
+
+### Minimal request (question only)
+
+```json
+{
+  "question": "What does Thirukkural say about perseverance?"
+}
+```
+
+<Note>
+  The `personality` field maps directly to the `Personality` type in the frontend's `quizLogic.ts` utility. When you pass a `Personality` object from the quiz result to `fetchAgentResponse`, it is serialized and forwarded as-is.
+</Note>

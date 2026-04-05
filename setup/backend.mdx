@@ -1,0 +1,110 @@
+---
+title: "Backend setup"
+description: "Run the Thirukkural.AI FastAPI backend with Vertex AI and the Kural retriever."
+---
+
+The backend is a **Python FastAPI** application served with **uvicorn**. On startup it eagerly initialises the Vertex AI client and the `UniqueRagKuralFetcher` retriever so the first request is not delayed by cold-start overhead.
+
+## Prerequisites
+
+- Python 3.9 or later
+- pip
+
+## Run locally
+
+<Steps>
+  <Step title="Move into the backend directory">
+    ```bash
+    cd backend
+    ```
+
+    <Note>
+      Run all backend commands from the `backend/` directory. The retriever resolves the dataset path relative to the source file location — running from a different directory will break the relative path resolution.
+    </Note>
+  </Step>
+
+  <Step title="Install dependencies">
+    ```bash
+    pip install -r requirement.txt
+    ```
+
+    Key dependencies used by the application:
+
+    | Package | Purpose |
+    |---------|---------|
+    | `fastapi` | HTTP framework |
+    | `uvicorn` | ASGI server |
+    | `google-genai` | Vertex AI / Gemini client |
+    | `python-dotenv` | Load `.env` files |
+    | `pydantic` | Request and response validation |
+  </Step>
+
+  <Step title="Configure environment variables">
+    Create a `.env` file in the `backend/` directory and add your credentials:
+
+    ```bash backend/.env
+    VERTEX_ENDPOINT=projects/my-project/locations/us-central1/endpoints/12345
+    GENAI_API_KEY=your-api-key-here
+    ```
+
+    At minimum, set `VERTEX_ENDPOINT` and `GENAI_API_KEY`. See [Environment variables](/setup/environment) for the full reference.
+  </Step>
+
+  <Step title="Ensure the dataset is present">
+    The retriever expects `dataset/raw/kural_data_raw.json` to exist relative to the repository root. If the file is missing, `UniqueRagKuralFetcher` raises a `FileNotFoundError` at startup and the server will not start.
+
+    See [Dataset](/setup/dataset) for details on the data format and how to obtain or regenerate the file.
+  </Step>
+
+  <Step title="Start the server">
+    ```bash
+    python mainModules/api_server.py
+    ```
+
+    The server binds to `0.0.0.0:8000`. You can verify it is running with:
+
+    ```bash
+    curl http://localhost:8000/health
+    ```
+
+    Expected response:
+
+    ```json
+    {"status": "ok"}
+    ```
+  </Step>
+</Steps>
+
+## Startup behaviour
+
+When the server starts it fires the `_warm_state` startup event, which calls `get_agent_state()`. This pre-initialises the Vertex AI client and loads the Kural dataset into memory so both are ready before the first `/api/v1/ask` request arrives.
+
+```python api_server.py
+@app.on_event("startup")
+def _warm_state() -> None:
+    """Eagerly initialize the Vertex client and retriever."""
+    get_agent_state()
+```
+
+## CORS
+
+CORS is configured to allow all origins so the frontend can reach the API from any host during development:
+
+```python api_server.py
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+```
+
+Restrict `allow_origins` to your frontend domain before deploying to production.
+
+## API endpoints
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/health` | Liveness check — returns `{"status": "ok"}` |
+| `POST` | `/api/v1/ask` | Submit a question and optional personality profile; returns matched Kurals and AI response |
